@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>נונוגרם</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
+html,body{height:100%;overflow:hidden;background:#141021;font-family:system-ui,-apple-system,sans-serif;color:#efeaff}
+body{display:flex;flex-direction:column;align-items:center}
+header{width:100%;max-width:560px;padding:12px 16px 2px;display:flex;align-items:center;justify-content:space-between}
+h1{font-size:21px;font-weight:800}
+#mode{display:flex;gap:8px}
+.mbtn{padding:8px 14px;border-radius:12px;border:1px solid #443a6e;background:#1e1836;color:#cfc4f5;font-size:14px;font-weight:700;cursor:pointer}
+.mbtn.on{background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff;border-color:#7c3aed}
+#msg{min-height:20px;font-size:13.5px;color:#c9b8ff;margin:2px 0;text-align:center}
+canvas{display:block;touch-action:none;border-radius:10px}
+#foot{font-size:12px;color:#7a6fa8;padding:10px 0;text-align:center}
+#ov{position:fixed;inset:0;background:#0b0816ee;display:flex;align-items:center;justify-content:center;z-index:9}
+.panel{background:linear-gradient(180deg,#241c42,#171130);border:1px solid #443a6e;border-radius:20px;padding:30px 26px;text-align:center;max-width:330px;width:88%}
+.panel h2{font-size:25px;margin-bottom:8px}
+.panel p{font-size:14px;line-height:1.7;color:#cfc4f5;margin-bottom:14px}
+.panel .big{font-size:15px;color:#ffd54a;font-weight:800;margin-bottom:16px}
+button.go{padding:13px 26px;border:none;border-radius:14px;font-size:15px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<header><h1>נונוגרם</h1>
+<div id="mode"><button class="mbtn on" id="fillBtn">■ מלא</button><button class="mbtn" id="xBtn">✕ סמן</button></div>
+</header>
+<div id="msg">מלאו לפי המספרים — הפכו את התמונה!</div>
+<canvas id="c"></canvas>
+<div id="foot">גרירה ממלאת שורה שלמה · לחיצה ארוכה מסמנת ✕</div>
+<div id="ov"><div class="panel">
+<h2>נונוגרם</h2>
+<p>המספרים בכל שורה וטור אומרים כמה משבצות רצופות למלא. למשל 3-1-2: שלוש רצופות, רווח, אחת, רווח, שתיים. גלו את הציור החבוי!</p>
+<div class="big" id="best"></div>
+<button class="go" id="startBtn">פתרו</button>
+</div></div>
+<script>
+'use strict';
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+const msg=document.getElementById('msg'),ov=document.getElementById('ov');
+const N=10;
+const PATTERNS=[
+ {name:'לב',rows:['0110011000','1111011110','1111111111','1111111111','1111111111','0111111110','0011111100','0001111000','0000110000','0000000000']},
+ {name:'חתול',rows:['1000000001','1100000011','1111111111','1101111011','1111111111','1110011111','0111111110','0011111100','0110000110','1100000011']},
+ {name:'עץ',rows:['0001111000','0011111100','0111111110','0011111100','0111111110','1111111111','0001111000','0001111000','0001111000','0011111100']},
+ {name:'סירה',rows:['0000100000','0001100000','0011100000','0111110000','0000100000','1111111111','0111111110','0011111100','0001111000','0000000000']},
+ {name:'כוכב',rows:['0000110000','0001111000','1111111111','0111111110','0011111100','0111111110','1110110111','1100110011','0000000000','0000000000']},
+ {name:'בית',rows:['0000110000','0001111000','0011111100','0111111110','1111111111','0111111110','0110110110','0110110110','0111111110','0110000110']},
+ {name:'כוס',rows:['0111111110','0100000010','0111111110','0111111111','0111111110','0111111110','0111111100','0011111000','0001100000','0011111100']},
+ {name:'פרפר',rows:['1100000011','1110000111','1111001111','0111111110','0011111100','0011111100','0111111110','1111001111','1110000111','0100000010']},
+];
+let sol=[],grid=[],rowClues=[],colClues=[],mode='fill',startTime=0,won=false;
+let cell=0,ox=0,oy=0,S=0,clueW=0;
+function cluesOf(line){
+  const res=[];let n=0;
+  for(const v of line){if(v==='1'||v===1)n++;else{if(n)res.push(n);n=0;}}
+  if(n)res.push(n);
+  return res.length?res:[0];
+}
+function build(){
+  const p=PATTERNS[(Math.random()*PATTERNS.length)|0];
+  sol=p.rows.map(r=>r.split('').map(Number));
+  grid=Array.from({length:N},()=>Array(N).fill(0)); // 0 empty, 1 filled, 2 X
+  rowClues=sol.map(r=>cluesOf(r));
+  colClues=[];
+  for(let c=0;c<N;c++){colClues.push(cluesOf(sol.map(r=>r[c])));}
+  startTime=Date.now();won=false;
+  msg.textContent='מלאו לפי המספרים — הפכו את התמונה!';
+  draw();
+}
+function rowDone(r){for(let c=0;c<N;c++){if(sol[r][c]===(grid[r][c]===1?0:1)&&sol[r][c]!==(grid[r][c]===1?1:0)){if((sol[r][c]===1)!==(grid[r][c]===1))return false;}}return true;}
+function checkWin(){
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    if(sol[r][c]===1&&grid[r][c]!==1)return false;
+    if(sol[r][c]===0&&grid[r][c]===1)return false;
+  }
+  return true;
+}
+function win(){
+  won=true;
+  const secs=Math.round((Date.now()-startTime)/1000);
+  const best=+(localStorage.getItem('nonogramBest')||0);
+  const nb=!best||secs<best;
+  if(nb)localStorage.setItem('nonogramBest',secs);
+  draw();
+  ov.querySelector('h2').textContent='נפתר!';
+  ov.querySelector('p').textContent=`חשפתם את הציור ב-${secs} שניות.`;
+  ov.querySelector('.big').textContent='שיא: '+(nb?secs:best)+' שניות';
+  ov.querySelector('button').textContent='תמונה חדשה';
+  ov.classList.remove('hidden');
+}
+function draw(){
+  x.clearRect(0,0,S+clueW*2,S+clueW*2);
+  // clue backgrounds
+  x.fillStyle='#1e1836';
+  x.fillRect(0,0,clueW,S+clueW);x.fillRect(clueW,0,S+clueW,clueW);
+  // grid cells
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    const px=clueW+c*cell,py=clueW+r*cell;
+    x.fillStyle=(r%2===c%2)?'#241d40':'#2b2350';
+    if(won&&sol[r][c]===1){x.fillStyle='#a78bfa';}
+    else if(grid[r][c]===1)x.fillStyle='#8b5cf6';
+    x.fillRect(px+1,py+1,cell-2,cell-2);
+    if(grid[r][c]===2&&!won){
+      x.strokeStyle='#6b5f9e';x.lineWidth=2;
+      x.beginPath();x.moveTo(px+cell*0.3,py+cell*0.3);x.lineTo(px+cell*0.7,py+cell*0.7);
+      x.moveTo(px+cell*0.7,py+cell*0.3);x.lineTo(px+cell*0.3,py+cell*0.7);x.stroke();
+    }
+  }
+  // 5-lines
+  x.strokeStyle='#00000066';x.lineWidth=2;
+  for(let i=5;i<N;i+=5){
+    x.beginPath();x.moveTo(clueW+i*cell,clueW);x.lineTo(clueW+i*cell,clueW+S);x.stroke();
+    x.beginPath();x.moveTo(clueW,clueW+i*cell);x.lineTo(clueW+S,clueW+i*cell);x.stroke();
+  }
+  x.strokeStyle='#554a86';x.lineWidth=2;
+  x.strokeRect(clueW,clueW,S,S);
+  // clues
+  x.fillStyle='#cfc4f5';x.textAlign='center';x.textBaseline='middle';
+  const fs=Math.max(11,cell*0.3);
+  x.font=`700 ${fs}px system-ui`;
+  for(let r=0;r<N;r++){
+    const cl=rowClues[r];
+    const done=sol[r].every((v,c)=>(v===1)===(grid[r][c]===1));
+    x.fillStyle=done?'#7a6fa8':'#cfc4f5';
+    cl.forEach((n,i)=>{
+      x.fillText(n,clueW-10-(cl.length-1-i)*fs*0.85,clueW+r*cell+cell/2);
+    });
+  }
+  for(let c=0;c<N;c++){
+    const cl=colClues[c];
+    const done=sol.every((row,r)=>(row[c]===1)===(grid[r][c]===1));
+    x.fillStyle=done?'#7a6fa8':'#cfc4f5';
+    cl.forEach((n,i)=>{
+      x.fillText(n,clueW+c*cell+cell/2,clueW-10-(cl.length-1-i)*fs*0.95);
+    });
+  }
+}
+function pos(e){
+  const r=cv.getBoundingClientRect();const t=e.touches?e.touches[0]:e;
+  const c=Math.floor((t.clientX-r.left-clueW)/cell),rr=Math.floor((t.clientY-r.top-clueW)/cell);
+  if(rr<0||rr>=N||c<0||c>=N)return null;return{r:rr,c};
+}
+let painting=null,paintVal=1,lpTimer=null;
+function apply(r,c,val){
+  if(grid[r][c]===val)return;
+  grid[r][c]=val;
+  draw();
+}
+function down(e){
+  if(won)return;
+  const p=pos(e);if(!p)return;
+  e.preventDefault&&e.preventDefault();
+  const cur=grid[p.r][p.c];
+  paintVal=mode==='x'?(cur===2?0:2):(cur===1?0:1);
+  painting=true;
+  apply(p.r,p.c,paintVal);
+  lpTimer=setTimeout(()=>{paintVal=grid[p.r][p.c]===2?0:2;apply(p.r,p.c,paintVal);},450);
+  if(checkWin())win();
+}
+function move(e){
+  if(!painting)return;
+  clearTimeout(lpTimer);
+  e.preventDefault();
+  const p=pos(e);if(!p)return;
+  apply(p.r,p.c,paintVal);
+}
+function up(){
+  if(painting){clearTimeout(lpTimer);painting=false;if(checkWin())win();}
+}
+cv.addEventListener('mousedown',down);cv.addEventListener('mousemove',move);window.addEventListener('mouseup',up);
+cv.addEventListener('touchstart',down,{passive:false});cv.addEventListener('touchmove',move,{passive:false});cv.addEventListener('touchend',up);
+document.getElementById('fillBtn').onclick=()=>{mode='fill';fillBtn.classList.add('on');xBtn.classList.remove('on');};
+document.getElementById('xBtn').onclick=()=>{mode='x';xBtn.classList.add('on');fillBtn.classList.remove('on');};
+document.getElementById('startBtn').onclick=()=>{ov.classList.add('hidden');build();};
+function resize(){
+  const w=Math.min(window.innerWidth-16,560);
+  clueW=Math.round(w*0.17);
+  S=w-clueW-4;
+  cell=S/N;
+  const total=clueW+S;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.width=total*dpr;cv.height=total*dpr;cv.style.width=total+'px';cv.style.height=total+'px';
+  x.setTransform(dpr,0,0,dpr,0,0);x.direction='ltr';
+  draw();
+}
+const bb=+(localStorage.getItem('nonogramBest')||0);
+if(bb)document.getElementById('best').textContent='השיא שלכם: '+bb+' שניות';
+window.addEventListener('resize',resize);
+build();resize();
+</script>
+</body>
+</html>
